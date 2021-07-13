@@ -100,18 +100,19 @@ class GatewayController extends Controller
 
 
         $class = 'App\Gateways\\' . $gateway->class_name;
-        $gatewayObject = new  $class($this->container, json_decode($account_gateway->config, false));
+        $conf = (object) array_merge(json_decode($account_gateway->config, true), ['callback' => 'https://ipg.local/callback/' . str_replace('GatewayController', '', $gateway->class_name)]);
+        $gatewayObject = new  $class($this->container, $conf);
         $gatewayResult = $gatewayObject->init($res);
-
 
         if ($gatewayResult['status'] === true) {
             $this->TokenDataAccess->updateStatus([
                 'id' => $res->id,
-                'status' => 'paid',
+                'status' => 'pending',
             ]);
 
+
             if ($gatewayResult['type'] === 'formSubmit') {
-                return $this->render('saman', $gatewayResult['data']);
+                return $this->view->render($response, 'saman', $gatewayResult['data']);
             }
         }
 
@@ -122,21 +123,14 @@ class GatewayController extends Controller
 
     public function callback(Request $request, Response $response, $args)
     {
-        $gateway = $args['gateway'];
+        $gatewayName = $args['gateway'];
 
-        switch ($gateway) {
-            case 'saman-token';
-                $order_id = $request->getParam('ResNum');
-                break;
-            case 'mellat';
-                $order_id = $request->getParam('SaleOrderId');
-                break;
-            case 'sadad';
-                $order_id = $request->getParam('OrderId');
-                break;
-            default:
-                return 'error';
+        $gateway = $this->GatewayDataAccess->allGatewaysInfo(['class_name' => $gatewayName . 'GatewayController']);
+        if (!$gateway) {
+            return $response->withJson(['status' => false, 'message' => 'gateway not available or not found']);
         }
+
+        $order_id = $request->getParam($gateway->order_id_property);
 
         $res = $this->TokenDataAccess->selectById([
             'id' => $order_id,
@@ -144,6 +138,10 @@ class GatewayController extends Controller
 
         if (!$res) {
             return $response->withJson(['status' => false, 'message' => 'order not found']);
+        }
+
+        if ($res->status === 'paid') {
+            return $response->withJson(['status' => false, 'message' => 'order paid']);
         }
 
         $account_gateway = $this->ClientAccountGatewayDataAccess->getّInfo(['id' => $res->client_account_gateway_id]);
@@ -157,7 +155,8 @@ class GatewayController extends Controller
         }
 
         $class = 'App\Gateways\\' . $gateway->class_name;
-        $gatewayObject = new  $class($this->container, json_decode($account_gateway->config, false));
+        $conf = (object) array_merge(json_decode($account_gateway->config, true), ['callback' => '']);
+        $gatewayObject = new $class($this->container, $conf);
         $gatewayResult = $gatewayObject->callback($request->getParams());
 
         if ($gatewayResult['status'] === true) {
@@ -165,21 +164,15 @@ class GatewayController extends Controller
                 'id' => $order_id,
                 'status' => 'paid',
             ]);
+            $tokenObject = $this->TokenDataAccess->selectById(['id' => $order_id]);
+            $data = array_merge($gatewayResult, ['callback' => $tokenObject->callback, 'token' => $tokenObject->token]);
+            return $this->view->render($response, 'callback', $data);
         }
 
         $this->TokenDataAccess->updateStatus([
             'id' => $order_id,
-            'status' => 'paid',
+            'status' => 'failed',
         ]);
-
-        var_dump($gatewayResult);
-        die();
-
-
-        if ($gatewayResult['status'] === true) {
-            return $response->withRedirect($gatewayResult['redirect']);
-        }
-
 
         return $response->withJson(['status' => false, 'message' => 'fail']);
     }

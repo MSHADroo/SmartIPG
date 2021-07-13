@@ -17,7 +17,7 @@ class LogDataAccess extends DataAccess
         $stmt->bindValue(':token_id', $data['token_id'], PDO::PARAM_INT);
         $stmt->bindValue(':request', $data['request'], PDO::PARAM_STR);
         $stmt->bindValue(':request_type', $data['request_type'], PDO::PARAM_STR);
-        $stmt->bindValue(':response', $data['response'], PDO::PARAM_STR);
+        $stmt->bindValue(':response', json_encode($data['response']), PDO::PARAM_STR);
         $stmt->bindValue(':status', $data['status'], PDO::PARAM_STR);
         return $stmt->execute();
     }

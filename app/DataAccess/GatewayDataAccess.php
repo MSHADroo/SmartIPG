@@ -34,4 +34,15 @@ class GatewayDataAccess extends DataAccess
         $stmt->execute();
         return $stmt->fetch();
     }
+
+    public function allGatewaysInfo($data)
+    {
+        $sql = "SELECT *
+                FROM gateways
+                where class_name = :class_name";
+        $stmt = $this->db->prepare($sql);
+        $stmt->bindValue(':class_name', $data['class_name'], PDO::PARAM_STR);
+        $stmt->execute();
+        return $stmt->fetch();
+    }
 }

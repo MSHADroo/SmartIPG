@@ -7,10 +7,11 @@ $app->group('/api', function () use ($app) {
 
         $app->post('/token', App\Controllers\GatewayController::class . ':init');
 
-        $app->get('/token/{token}', App\Controllers\GatewayController::class . ':gotobank');
 
-        $app->get('/callback/{gateway}', App\Controllers\GatewayController::class . ':callback');
     });
 });
 
+$app->get('/token/{token}', App\Controllers\GatewayController::class . ':gotobank');
+
+$app->post('/callback/{gateway}', App\Controllers\GatewayController::class . ':callback');
 

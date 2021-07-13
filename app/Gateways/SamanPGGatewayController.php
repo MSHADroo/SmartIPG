@@ -6,8 +6,7 @@ use App\Controllers\Controller;
 use App\DataAccess\GatewayDataAccess;
 use App\DataAccess\TokenDataAccess;
 use GuzzleHttp\Exception\RequestException;
-use SoapClient;
-use Symfony\Component\Translation\Exception\LogicException;
+use LogicException;
 
 /**
  * @property GatewayDataAccess GatewayDataAccess
@@ -81,6 +80,8 @@ class SamanPGGatewayController extends Controller
     {
         parent::__construct($container);
         $this->terminal_id = $conf->terminal_id;
+        $this->callback = $conf->callback;
+        $this->TokenDataAccess = new TokenDataAccess($this->container);
     }
 
     public function init($input)
@@ -88,20 +89,17 @@ class SamanPGGatewayController extends Controller
         $data = [
             'Action'      => 'token',
             'TerminalId'  => $this->terminal_id,
-            'RedirectUrl' => 'http://gateways.local/callback/saman-token',
+            'RedirectUrl' => $this->callback,
             'Amount'      => $input->price,
-            'ResNum'      => $input->order_id,
+            'ResNum'      => $input->id,
             'CellNumber'  => $input->mobile,
-//            'curl_url'    => self::GATEWAY_PAYMENT_URL
         ];
-
 
         try {
             $client = new \GuzzleHttp\Client();
             $response = $client->request('POST', self::GATEWAY_PAYMENT_URL, ['timeout' => 10, 'form_params' => $data]);
             $statusCode = $response->getStatusCode(); // 200
             $result = $response->getBody()->getContents();
-            $status = 'success';
         } catch (RequestException $exception) {
             $this->transactionLog([
                 'token_id'     => $input->order_id,
@@ -153,8 +151,6 @@ class SamanPGGatewayController extends Controller
 
     public function callback(array $input): array
     {
-//        $guid = StringHelper::getGUID();
-
         $state = $input['State'];//وضعیت تراکنش (حروف انگلیسی)
         $status = $input['Status'];//وضعیت تراکنتش(مقدار عددی)
         $ref_num = $input['RefNum'];//رسید دیجیتالی خرید
@@ -168,46 +164,42 @@ class SamanPGGatewayController extends Controller
 //        $wage = $input['Wage'];
 //        $secure_pan = $input['SecurePan'];
 
-
         $secure_pan     = $input['SecurePan'];
 
-
         try {
-
             if ($state === 'OK') {
                 $tokenObject = $this->TokenDataAccess->selectById(['id' => $res_num]);
                 if (!$tokenObject) {
                     throw new LogicException('order dose not exist');
                 }
                 if ($tokenObject->status === 'paid') {
-                    throw new LogicException('previously logged');
+                    throw new LogicException('previously paid');
                 }
 
-                try {
-                    $post_data = [
-                        'RefNum'             => $ref_num,
-                        'TerminalNumber'     => $this->terminal_id,
-                        'IgnoreNationalcode' => 'True'
-                    ];
-                    $client = new \GuzzleHttp\Client();
-                    $verify_request = $client->request('POST', self::GATEWAY_VERIFY_URL, ['timeout' => 100, 'form_params' => $post_data])->getBody()->getContents();
-
-                } catch (LogicException $exception) {
-                    throw new LogicException($exception->getMessage());
-                }
+                $post_data = [
+                    'RefNum'             => $ref_num,
+                    'TerminalNumber'     => $this->terminal_id,
+                    'IgnoreNationalcode' => 'True'
+                ];
+                $client = new \GuzzleHttp\Client();
+                $verify_request = $client->request('POST', self::GATEWAY_VERIFY_URL, ['timeout' => 100, 'form_params' => $post_data])->getBody()->getContents();
 
                 $result = json_decode($verify_request, false);
 
-                if ($result->Success === true) {
-                    $this->transactionLog([
-                        'token_id'     => $tokenObject->id,
-                        'request'      => $input,
-                        'request_type' => 'confirm',
-                        'response'     => $result,
-                        'status'       => 'success',
-                    ]);
+                if ($result->Success === true || ($result->Success === false && $result->ResultCode == 2)) {
+                    if($result->Success === true) {
+                        $this->transactionLog([
+                            'token_id' => $tokenObject->id,
+                            'request' => $input,
+                            'request_type' => 'confirm',
+                            'response' => $result,
+                            'status' => 'success',
+                        ]);
+                    }
                     return [
-                        'status' => true
+                        'status' => true,
+                        'order_id' => $tokenObject->id,
+                        'bank_ref_number' => $trace_no
                     ];
                 }
 
@@ -218,7 +210,8 @@ class SamanPGGatewayController extends Controller
                     'response'     => $result,
                     'status'       => 'fail',
                 ]);
-                throw new LogicException($this->verifyError[$result]);
+
+                throw new LogicException($this->verifyError[$result->ResultCode]);
             }
             throw new LogicException($this->error[$status]['desc']);
         } catch (LogicException $e) {

@@ -4,6 +4,7 @@ namespace App\Gateways;
 
 use App\Controllers\Controller;
 use App\DataAccess\GatewayDataAccess;
+use App\DataAccess\TokenDataAccess;
 use GuzzleHttp\Exception\RequestException;
 use SoapClient;
 use Symfony\Component\Translation\Exception\LogicException;
@@ -79,6 +80,7 @@ class SamanTokenGatewayController extends Controller
     {
         parent::__construct($container);
         $this->terminal_id = $conf->terminal_id;
+        $this->TokenDataAccess = new TokenDataAccess($this->container);
     }
 
     public function init($input)
@@ -86,7 +88,7 @@ class SamanTokenGatewayController extends Controller
         $data = [
             'Action'      => 'token',
             'TerminalId'  => $this->terminal_id,
-            'RedirectUrl' => 'https://gateways.local/callback/saman-token',
+            'RedirectUrl' => 'https://ipg.local/callback/saman-token',
             'Amount'      => $input->price,
             'ResNum'      => $input->id,
             'CellNumber'  => $input->mobile,
@@ -210,6 +212,7 @@ class SamanTokenGatewayController extends Controller
             }
             throw new LogicException($this->error[$status]['desc']);
         } catch (LogicException $e) {
+            var_dump($e->getMessage(),$e->getFile(), $e->getLine());
             return [
                 'status'  => false,
                 'message' => $e->getMessage(),
